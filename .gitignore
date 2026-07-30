@@ -1,6 +1,23 @@
 # Secrets — never commit
+# .env and any variant (.env.local, .env.production, etc.)
 .env
+.env.*
+!.env.example          # keep the template (no real key in it)
+
+# Keys, certs, and credential files
 *.key
+*.pem
+*.pfx
+*.p12
+*.crt
+credentials.json
+secrets.json
+secrets.yaml
+service-account*.json
+
+# Common secret filenames
+*_secret*
+*.secret
 
 # Python
 venv/
@@ -16,3 +33,5 @@ Thumbs.db
 
 # Build / temp
 *.tmp
+
+.claude
