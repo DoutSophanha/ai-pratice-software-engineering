@@ -14,6 +14,8 @@ Type /help inside the session for interactive commands.
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import sys
 
 import config
@@ -35,8 +37,8 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--temperature", type=float, default=config.DEFAULT_TEMPERATURE)
     p.add_argument("--max-tokens", type=int, default=config.DEFAULT_MAX_TOKENS,
                    dest="max_tokens")
-    p.add_argument("--model", default=config.DEFAULT_MODEL,
-                   help="override the model name")
+    p.add_argument("--model", default=os.environ.get("OPENAI_MODEL", config.DEFAULT_MODEL),
+                   help="override the model name (falls back to OPENAI_MODEL env var)")
     p.add_argument("--stream", action="store_true",
                    help="stream the response progressively")
     return p.parse_args(argv)
@@ -60,9 +62,18 @@ Commands:
   /temperature <value>  change temperature (0.0 - 2.0)
   /tokens <n>           change the maximum output tokens
   /usage                show total tokens used this session
+  /save <file>          save the conversation to a JSON file
+  /load <file>          load a conversation from a JSON file
   /clear                clear the conversation history
   /quit                 exit
 """
+
+
+def _is_valid_messages(data) -> bool:
+    """A saved conversation is just a list of role/content dicts (R5)."""
+    return isinstance(data, list) and all(
+        isinstance(m, dict) and "role" in m and "content" in m for m in data
+    )
 
 
 class Session:
@@ -110,6 +121,10 @@ class Session:
             self._set_int("max_tokens", arg)
         elif cmd == "/usage":
             print(self.service.total_usage.format())
+        elif cmd == "/save":
+            self._save(arg)
+        elif cmd == "/load":
+            self._load(arg)
         elif cmd == "/clear":
             self.reset_conversation()
             print("Conversation cleared.")
@@ -139,6 +154,35 @@ class Session:
         old = getattr(self.service, attr)
         setattr(self.service, attr, value)
         print(f"{attr} changed from {old} -> {value}")
+
+    # ---- save / load (Stretch S2) ----------------------------------------
+    def _save(self, path: str) -> None:
+        if not path:
+            print("Usage: /save <file>")
+            return
+        try:
+            with open(path, "w") as f:
+                json.dump(self.messages, f, indent=2)
+        except OSError as err:
+            print(f"Could not save conversation: {err}")
+            return
+        print(f"Conversation saved to {path}")
+
+    def _load(self, path: str) -> None:
+        if not path:
+            print("Usage: /load <file>")
+            return
+        try:
+            with open(path) as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError) as err:
+            print(f"Could not load conversation: {err}")
+            return
+        if not _is_valid_messages(data):
+            print("That file isn't a valid saved conversation. Keeping current conversation.")
+            return
+        self.messages = data
+        print(f"Conversation loaded from {path}")
 
     # ---- one turn --------------------------------------------------------
     def ask_turn(self, user_input: str) -> None:

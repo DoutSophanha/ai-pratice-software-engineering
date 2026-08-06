@@ -65,6 +65,7 @@ python main.py --persona tutor --temperature 0.4 --max-tokens 500 --stream
 ```
 /help        /persona <name>     /temperature <value>
 /tokens <n>  /usage              /clear            /quit
+/save <file> /load <file>
 ```
 
 ## How the requirements map to the code
@@ -136,12 +137,61 @@ _Answer these here as part of your submission._
 
 1. **What happens when temperature is changed from 0.2 to 1.0?**
 
+   At 0.2 the model picks its most likely next token almost every time, so
+   replies are focused, repeatable, and a bit dry. At 1.0 it samples more
+   broadly across less likely tokens, so wording, structure, and even the
+   angle taken on the answer vary more from run to run. Higher temperature
+   is good for brainstorming, lower is better when you want a consistent,
+   predictable answer (like a code review verdict).
+
 2. **Why should an application not retry every API error?**
+
+   Some failures are terminal: a missing API key, a malformed request, or a
+   prompt that exceeds the context window will fail the exact same way no
+   matter how many times you resend it. Retrying those just burns time,
+   quota, and (on paid tiers) money while showing the user a spinner for no
+   reason. Only transient failures, like a rate limit or a dropped
+   connection, have a real chance of succeeding on a second attempt, which
+   is why `llm.py` splits errors into terminal (`ConfigurationError`,
+   `InvalidRequestError`, `ContextLengthError`) and transient
+   (`RateLimitError`, `ServiceUnavailableError`) and only backs off and
+   retries the second group.
 
 3. **Why should the API key not be stored directly in the source code?**
 
+   Source code gets committed, pushed to shared repos, copied into forks,
+   and pasted into issues or chat. A key hard-coded there is now anyone's
+   who can read the repository, including in old commits after you "remove"
+   it later. Keeping it in `.env` (which is git-ignored) means the key lives
+   only on the machine that needs it, can be rotated without touching code,
+   and is never a `git blame` away from being leaked.
+
 4. **Why does conversation history increase token usage?**
+
+   Chat models are stateless between calls. Every turn, the full message
+   list, system prompt plus every prior user and assistant message, is sent
+   again as input so the model has the context to answer coherently. That
+   means input tokens grow with every turn even though you only typed one
+   new message, which is why `/usage` reporting total tokens (not just the
+   latest reply) matters for anyone watching cost.
 
 5. **What is the main advantage of streaming?**
 
+   The user sees the reply appear as it's generated instead of staring at a
+   blank screen until the whole response is done. Perceived latency drops a
+   lot even though the total time to finish the reply is about the same,
+   and it lets the user start reading (or interrupt) before generation
+   finishes.
+
 6. **If 10,000 users use your application, what engineering problems might appear?**
+
+   Rate limits and quota become a real constraint, not a rare edge case, so
+   retry/backoff and request queuing matter a lot more. Cost scales
+   directly with usage, so token consumption (including all that repeated
+   conversation history from Q4) needs monitoring and probably caps per
+   user. A single shared API key becomes a bottleneck and a security risk,
+   pushing you toward per-user auth and key management. You'd also need
+   concurrency handling (many simultaneous streamed requests), observability
+   (logging, error rates, latency dashboards) to know when the upstream
+   provider is degraded, and a plan for graceful degradation when the
+   provider itself is down or throttling you.
